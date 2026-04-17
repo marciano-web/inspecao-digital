@@ -80,6 +80,9 @@ export default function NovoTemplatePage() {
           config: f.config,
           weight: f.weight,
           conditions: f.conditions || null,
+          actions: f.actions ?? [],
+          is_repeatable: f.is_repeatable ?? false,
+          max_repeats: f.max_repeats ?? 10,
         }))
 
         await supabase.from('template_fields').insert(fields)

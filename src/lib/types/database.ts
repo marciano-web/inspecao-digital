@@ -58,6 +58,8 @@ export interface TemplateSection {
   description: string | null
   position: number
   is_repeatable: boolean
+  min_repeats: number
+  max_repeats: number
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
@@ -84,8 +86,26 @@ export interface FieldConfig {
 
 export interface FieldCondition {
   field_id: string
-  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than'
+  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'is_empty' | 'is_not_empty'
   value: string | number | boolean
+}
+
+export type ActionType = 'require_photo' | 'require_video' | 'require_annotation' | 'require_media' | 'show_field' | 'flag' | 'require_note'
+
+export interface FieldAction {
+  when: {
+    operator: 'equals' | 'not_equals' | 'contains' | 'any'
+    value: string | number | boolean | string[]
+  }
+  then: Array<{
+    type: ActionType
+    config?: {
+      min_media?: number
+      field_label?: string
+      field_type?: FieldType
+      message?: string
+    }
+  }>
 }
 
 export interface TemplateField {
@@ -99,6 +119,10 @@ export interface TemplateField {
   config: FieldConfig
   weight: number
   conditions: FieldCondition | null
+  actions: FieldAction[]
+  is_repeatable: boolean
+  min_repeats: number
+  max_repeats: number
   created_at: string
   updated_at: string
 }

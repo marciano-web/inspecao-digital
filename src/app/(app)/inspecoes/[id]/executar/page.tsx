@@ -263,11 +263,39 @@ export default function ExecutarInspecaoPage() {
           )}
 
           <div className="space-y-6">
-            {section.fields.map((field) => (
-              <div key={field.id}>
+            {section.fields.map((field) => {
+              // Check conditional visibility
+              if (field.conditions) {
+                const cond = field.conditions
+                const depValue = responses[cond.field_id]
+                let visible = false
+                if (cond.operator === 'equals') visible = depValue === cond.value
+                else if (cond.operator === 'not_equals') visible = depValue !== cond.value
+                else if (cond.operator === 'is_not_empty') visible = depValue !== null && depValue !== '' && depValue !== undefined
+                else if (cond.operator === 'contains') visible = String(depValue ?? '').includes(String(cond.value))
+                else visible = true
+                if (!visible) return null
+              }
+
+              // Check triggered actions for this field's current value
+              const fieldValue = responses[field.id]
+              const triggeredActions = (field.actions ?? []).filter((a) => {
+                if (a.when.operator === 'equals') return fieldValue === a.when.value
+                if (a.when.operator === 'not_equals') return fieldValue !== a.when.value
+                if (a.when.operator === 'any') return fieldValue !== null && fieldValue !== undefined
+                return false
+              })
+              const actionTypes = triggeredActions.flatMap((a) => a.then.map((t) => t.type))
+              const needsPhoto = actionTypes.includes('require_photo') || actionTypes.includes('require_media')
+              const needsNote = actionTypes.includes('require_note') || actionTypes.includes('require_annotation')
+              const isFlagged = actionTypes.includes('flag')
+
+              return (
+              <div key={field.id} className={isFlagged ? 'rounded-lg border-l-4 border-l-red-500 bg-red-50 p-3' : ''}>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   {field.label}
                   {field.is_required && <span className="ml-1 text-red-500">*</span>}
+                  {field.is_repeatable && <span className="ml-1 text-xs text-blue-500">(repetível)</span>}
                 </label>
                 {field.description && (
                   <p className="mb-2 text-xs text-slate-400">{field.description}</p>
@@ -280,8 +308,30 @@ export default function ExecutarInspecaoPage() {
                   onAddPhoto={(file) => handleAddPhoto(field.id, file)}
                   onRemovePhoto={handleRemovePhoto}
                 />
+
+                {/* Conditional actions triggered by response */}
+                {needsPhoto && photos.filter(p => p.fieldId === field.id).length === 0 && (
+                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    <span>Foto/evidência obrigatória para esta resposta</span>
+                  </div>
+                )}
+                {needsNote && (
+                  <div className="mt-2">
+                    <textarea
+                      value={(responses[`${field.id}_note`] as string) ?? ''}
+                      onChange={(e) => handleFieldChange(`${field.id}_note`, e.target.value)}
+                      placeholder="Observação obrigatória..."
+                      rows={2}
+                      className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+                {isFlagged && (
+                  <p className="mt-1 text-xs font-medium text-red-600">Sinalizado como não conforme</p>
+                )}
               </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

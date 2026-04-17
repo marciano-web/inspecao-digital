@@ -71,7 +71,10 @@ export default function EditarTemplatePage() {
             is_required: f.is_required,
             config: f.config as Record<string, unknown>,
             weight: f.weight,
-            conditions: null,
+            conditions: f.conditions as { field_id: string; operator: string; value: string | number | boolean } | null,
+            actions: (f.actions ?? []) as Array<{ when: { operator: string; value: string | number | boolean | string[] }; then: Array<{ type: string; config?: Record<string, unknown> }> }>,
+            is_repeatable: f.is_repeatable ?? false,
+            max_repeats: f.max_repeats ?? 10,
           })),
       }))
 
@@ -82,7 +85,7 @@ export default function EditarTemplatePage() {
         scoring_method: tmpl.scoring_method,
         pass_threshold: tmpl.pass_threshold,
         sections: mappedSections,
-      })
+      } as any)
       setLoading(false)
     }
     load()
@@ -141,6 +144,9 @@ export default function EditarTemplatePage() {
           config: f.config,
           weight: f.weight,
           conditions: f.conditions || null,
+          actions: f.actions ?? [],
+          is_repeatable: f.is_repeatable ?? false,
+          max_repeats: f.max_repeats ?? 10,
         }))
         await supabase.from('template_fields').insert(fields)
       }

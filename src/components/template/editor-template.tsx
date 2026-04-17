@@ -5,7 +5,7 @@ import { v4 as uuid } from 'uuid'
 import { Plus, GripVertical, Trash2, ChevronDown, ChevronUp, Save, Send } from 'lucide-react'
 import { fieldTypeLabels, getDefaultConfig } from '@/lib/utils/field-defaults'
 import { ConfigCampo } from '@/components/template/config-campo'
-import type { FieldType, ScoringMethod, TemplateSection, TemplateField } from '@/lib/types/database'
+import type { FieldType, ScoringMethod, TemplateSection, TemplateField, FieldAction } from '@/lib/types/database'
 
 interface LocalSection {
   _id: string
@@ -24,7 +24,10 @@ interface LocalField {
   is_required: boolean
   config: Record<string, unknown>
   weight: number
-  conditions: null
+  conditions: { field_id: string; operator: string; value: string | number | boolean } | null
+  actions: FieldAction[]
+  is_repeatable: boolean
+  max_repeats: number
 }
 
 interface EditorTemplateProps {
@@ -107,6 +110,9 @@ export function EditorTemplate({ onSave, saving, initialData }: EditorTemplatePr
                   config: getDefaultConfig(fieldType) as Record<string, unknown>,
                   weight: 1,
                   conditions: null,
+                  actions: [],
+                  is_repeatable: false,
+                  max_repeats: 10,
                 },
               ],
             }
@@ -157,6 +163,8 @@ export function EditorTemplate({ onSave, saving, initialData }: EditorTemplatePr
       description: s.description || null,
       position: si,
       is_repeatable: s.is_repeatable,
+      min_repeats: 1,
+      max_repeats: 10,
       settings: {},
       created_at: '',
       updated_at: '',
@@ -171,6 +179,10 @@ export function EditorTemplate({ onSave, saving, initialData }: EditorTemplatePr
         config: f.config,
         weight: f.weight,
         conditions: f.conditions,
+        actions: f.actions,
+        is_repeatable: f.is_repeatable,
+        min_repeats: 1,
+        max_repeats: f.max_repeats,
         created_at: '',
         updated_at: '',
       })),
@@ -362,6 +374,17 @@ export function EditorTemplate({ onSave, saving, initialData }: EditorTemplatePr
                         fieldType={field.field_type}
                         config={field.config}
                         onChange={(config) => updateField(section._id, field._id, { config })}
+                        actions={field.actions ?? []}
+                        onActionsChange={(actions) => updateField(section._id, field._id, { actions })}
+                        isRepeatable={field.is_repeatable ?? false}
+                        onRepeatableChange={(is_repeatable) => updateField(section._id, field._id, { is_repeatable })}
+                        maxRepeats={field.max_repeats ?? 10}
+                        onMaxRepeatsChange={(max_repeats) => updateField(section._id, field._id, { max_repeats })}
+                        siblingFields={section.fields
+                          .filter((f) => f._id !== field._id)
+                          .map((f) => ({ id: f._id, label: f.label, field_type: f.field_type, config: f.config }))}
+                        conditions={field.conditions}
+                        onConditionsChange={(conditions) => updateField(section._id, field._id, { conditions })}
                       />
                     </div>
                     <button
