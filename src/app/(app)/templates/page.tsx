@@ -5,14 +5,16 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
-import { Plus, FileText, MoreVertical, Eye, Pencil, Archive } from 'lucide-react'
+import { Plus, FileText, MoreVertical, Eye, Pencil, Archive, QrCode } from 'lucide-react'
 import type { InspectionTemplate } from '@/lib/types/database'
 import toast from 'react-hot-toast'
+import { QrModal } from '@/components/template/qr-modal'
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<InspectionTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [qrTemplate, setQrTemplate] = useState<InspectionTemplate | null>(null)
   const supabase = createClient()
 
   const fetchTemplates = async () => {
@@ -107,7 +109,15 @@ export default function TemplatesPage() {
                       <MoreVertical className="h-4 w-4" />
                     </button>
                     {menuOpen === t.id && (
-                      <div className="absolute right-0 top-8 z-10 w-40 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                      <div className="absolute right-0 top-8 z-10 w-44 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                        {t.status === 'published' && (
+                          <button
+                            onClick={() => { setQrTemplate(t); setMenuOpen(null) }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50"
+                          >
+                            <QrCode className="h-4 w-4" /> QR Code
+                          </button>
+                        )}
                         <Link
                           href={`/templates/${t.id}/editar`}
                           className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50"
@@ -149,6 +159,14 @@ export default function TemplatesPage() {
             )
           })}
         </div>
+      )}
+
+      {qrTemplate && (
+        <QrModal
+          templateId={qrTemplate.id}
+          templateTitle={qrTemplate.title}
+          onClose={() => setQrTemplate(null)}
+        />
       )}
     </div>
   )

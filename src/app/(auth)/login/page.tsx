@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -15,6 +15,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+  const [next, setNext] = useState('/dashboard')
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setNext(params.get('next') || '/dashboard')
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,7 +36,7 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/dashboard')
+    router.push(next)
     router.refresh()
   }
 

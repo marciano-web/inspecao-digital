@@ -11,6 +11,14 @@ export interface Organization {
   name: string
   slug: string
   logo_url: string | null
+  legal_name: string | null
+  cnpj: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  website: string | null
+  report_header: string | null
+  report_footer: string | null
   settings: Record<string, unknown>
   created_at: string
   updated_at: string
