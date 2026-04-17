@@ -8,7 +8,9 @@ import Link from 'next/link'
 import { Plus, FileText, MoreVertical, Eye, Pencil, Archive, QrCode } from 'lucide-react'
 import type { InspectionTemplate } from '@/lib/types/database'
 import toast from 'react-hot-toast'
-import { QrModal } from '@/components/template/qr-modal'
+import dynamicImport from 'next/dynamic'
+
+const QrModal = dynamicImport(() => import('@/components/template/qr-modal').then(m => m.QrModal), { ssr: false })
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState<InspectionTemplate[]>([])
@@ -19,16 +21,17 @@ export default function TemplatesPage() {
 
   const fetchTemplates = async () => {
     try {
+      // Simpler query without join to avoid potential FK issues
       const { data, error } = await supabase
         .from('inspection_templates')
-        .select('*, creator:profiles(full_name)')
+        .select('*')
         .order('updated_at', { ascending: false })
 
       if (error) {
         console.error('Erro ao buscar templates:', error)
         toast.error('Erro: ' + error.message)
       }
-      if (data) setTemplates(data as unknown as InspectionTemplate[])
+      if (data) setTemplates(data as InspectionTemplate[])
     } catch (e) {
       console.error('Falha na requisição:', e)
       toast.error('Falha ao carregar templates')
