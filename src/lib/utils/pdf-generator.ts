@@ -17,28 +17,42 @@ interface GeneratePdfParams {
 
 async function loadImageAsBase64(url: string): Promise<{ data: string; w: number; h: number; format: string } | null> {
   return await new Promise(async (resolve) => {
-    // Hard timeout: never hang more than 8 seconds total
     const hardTimeout = setTimeout(() => {
       console.warn('[PDF] Image load timeout:', url)
       resolve(null)
-    }, 8000)
+    }, 10000)
 
     try {
       const response = await fetch(url, { mode: 'cors' })
       if (!response.ok) {
         clearTimeout(hardTimeout)
-        console.warn('[PDF] Image fetch failed:', response.status, url)
         return resolve(null)
       }
       const blob = await response.blob()
 
-      // Skip unsupported formats
       if (blob.type.includes('heic') || blob.type.includes('heif')) {
         clearTimeout(hardTimeout)
-        console.warn('[PDF] HEIC not supported, skipping:', url)
+        console.warn('[PDF] HEIC not supported:', url)
         return resolve(null)
       }
 
+      // Use createImageBitmap with EXIF auto-rotate (corrects phone-portrait photos)
+      try {
+        const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' })
+        const canvas = document.createElement('canvas')
+        canvas.width = bitmap.width
+        canvas.height = bitmap.height
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(bitmap, 0, 0)
+        bitmap.close?.()
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        clearTimeout(hardTimeout)
+        return resolve({ data: dataUrl, w: canvas.width, h: canvas.height, format: 'JPEG' })
+      } catch (bmErr) {
+        console.warn('[PDF] createImageBitmap failed, fallback to FileReader', bmErr)
+      }
+
+      // Fallback for browsers without createImageBitmap support
       const reader = new FileReader()
       reader.onloadend = () => {
         const dataUrl = reader.result as string
@@ -48,16 +62,10 @@ async function loadImageAsBase64(url: string): Promise<{ data: string; w: number
           const format = blob.type.includes('png') ? 'PNG' : blob.type.includes('webp') ? 'WEBP' : 'JPEG'
           resolve({ data: dataUrl, w: img.width, h: img.height, format })
         }
-        img.onerror = () => {
-          clearTimeout(hardTimeout)
-          resolve(null)
-        }
+        img.onerror = () => { clearTimeout(hardTimeout); resolve(null) }
         img.src = dataUrl
       }
-      reader.onerror = () => {
-        clearTimeout(hardTimeout)
-        resolve(null)
-      }
+      reader.onerror = () => { clearTimeout(hardTimeout); resolve(null) }
       reader.readAsDataURL(blob)
     } catch (e) {
       clearTimeout(hardTimeout)
@@ -274,23 +282,24 @@ export async function generateInspectionPdf(params: GeneratePdfParams): Promise<
           py += 5
         }
 
-        // ===== Question / Test Description =====
+        // ===== Question / Test Description (justified) =====
         doc.setDrawColor(150)
         doc.setFillColor(255, 255, 255)
+        doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(20)
         const qLabelLines = doc.splitTextToSize(field.label, contentWidth - 6)
+        doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(80)
         const descCfgLines = field.description ? doc.splitTextToSize(`Critério de aceitação: ${field.description}`, contentWidth - 6) : []
-        const qHeight = 6 + qLabelLines.length * 4 + (descCfgLines.length > 0 ? descCfgLines.length * 3.5 + 3 : 0) + 3
+        const qHeight = 4 + qLabelLines.length * 4.5 + (descCfgLines.length > 0 ? descCfgLines.length * 4 + 3 : 0) + 3
 
         doc.rect(margin, py, contentWidth, qHeight, 'D')
 
-        doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(20)
-        doc.text('Pergunta:', margin + 3, py + 5)
-        doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(20)
-        doc.text(qLabelLines, margin + 22, py + 5)
+        doc.setFontSize(10).setFont('helvetica', 'bold').setTextColor(20)
+        // Justified text using jsPDF align option
+        doc.text(qLabelLines, margin + 3, py + 6, { align: 'justify', maxWidth: contentWidth - 6 })
 
         if (descCfgLines.length > 0) {
-          doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(80)
-          doc.text(descCfgLines, margin + 3, py + 5 + qLabelLines.length * 4 + 4)
+          doc.setFontSize(9).setFont('helvetica', 'normal').setTextColor(80)
+          doc.text(descCfgLines, margin + 3, py + 6 + qLabelLines.length * 4.5 + 3, { align: 'justify', maxWidth: contentWidth - 6 })
         }
         py += qHeight
 
@@ -344,26 +353,14 @@ export async function generateInspectionPdf(params: GeneratePdfParams): Promise<
           evidY += noteLines.length * 3.5 + 3
         }
 
-        // Video links
-        if (videos.length > 0 && pageIdx === 0) {
-          doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(60)
-          doc.text('Vídeos:', margin + 3, evidY + 3)
-          evidY += 5
-          videos.forEach((v) => {
-            const vUrl = v.storage_path.startsWith('http') ? v.storage_path : `${publicBucketUrl}/${v.storage_path}`
-            doc.setFontSize(7).setFont('helvetica', 'normal').setTextColor(30, 64, 175)
-            doc.textWithLink(`▶ ${v.file_name}`, margin + 6, evidY + 2, { url: vUrl })
-            evidY += 4
-          })
-          evidY += 2
-        }
-
-        // Image grid 2 cols x 3 rows
+        // Image grid 2 cols x 3 rows (max 6 per page)
         const cols = 2
         const gap = 4
         const cellW = (contentWidth - 6 - gap * (cols - 1)) / cols
-        const availH = py + evidH - evidY - 4
-        const cellH = Math.min((availH - gap * 2) / 3, cellW * 0.75)
+        // Reserve space for videos at bottom (~15mm if videos exist on this page)
+        const reservedForVideos = (videos.length > 0 && pageIdx === totalPhotoPages - 1) ? Math.min(20, videos.length * 4 + 6) : 0
+        const availH = py + evidH - evidY - 4 - reservedForVideos
+        const cellH = Math.min((availH - gap * 2) / 3, cellW * 1.0) // square-ish, allow more height for portrait
 
         const startIdx = pageIdx * photosPerPage
         const endIdx = Math.min(startIdx + photosPerPage, photoBlocks.length)
@@ -380,10 +377,41 @@ export async function generateInspectionPdf(params: GeneratePdfParams): Promise<
             const x = margin + 3 + col * (cellW + gap)
             const yPos = evidY + row * (cellH + gap)
             try {
-              doc.addImage(photoData.data, photoData.format, x, yPos, cellW, cellH, undefined, 'FAST')
+              // Fit image preserving aspect ratio (centered in cell)
+              const imgRatio = photoData.w / photoData.h
+              const cellRatio = cellW / cellH
+              let drawW = cellW, drawH = cellH, offX = 0, offY = 0
+              if (imgRatio > cellRatio) {
+                // Image is wider: fit by width
+                drawH = cellW / imgRatio
+                offY = (cellH - drawH) / 2
+              } else {
+                // Image is taller: fit by height
+                drawW = cellH * imgRatio
+                offX = (cellW - drawW) / 2
+              }
+              doc.setFillColor(245, 245, 245)
+              doc.rect(x, yPos, cellW, cellH, 'F')
+              doc.addImage(photoData.data, photoData.format, x + offX, yPos + offY, drawW, drawH, undefined, 'FAST')
               doc.setDrawColor(180)
               doc.rect(x, yPos, cellW, cellH, 'D')
-            } catch { /* skip */ }
+            } catch (e) { console.warn('[PDF] addImage failed', e) }
+          })
+        }
+
+        // Videos AFTER images, at bottom of evidências quadrant
+        if (videos.length > 0 && pageIdx === totalPhotoPages - 1) {
+          const videoY = py + evidH - reservedForVideos + 3
+          doc.setFontSize(8).setFont('helvetica', 'bold').setTextColor(60)
+          doc.text('Vídeos:', margin + 3, videoY)
+          let vy = videoY + 4
+          videos.forEach((v, vi) => {
+            const vUrl = v.storage_path.startsWith('http') ? v.storage_path : `${publicBucketUrl}/${v.storage_path}`
+            doc.setFontSize(8).setFont('helvetica', 'normal').setTextColor(30, 64, 175)
+            const linkText = `Vídeo ${vi + 1}: ${vUrl}`
+            const linkLines = doc.splitTextToSize(linkText, contentWidth - 8)
+            doc.textWithLink(linkLines[0], margin + 4, vy, { url: vUrl })
+            vy += 4
           })
         }
 
