@@ -139,12 +139,45 @@ export interface TemplateField {
   updated_at: string
 }
 
+export interface Customer {
+  id: string
+  organization_id: string
+  name: string
+  legal_name: string | null
+  cnpj: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  contact_person: string | null
+  notes: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ServiceOrder {
+  id: string
+  organization_id: string
+  customer_id: string
+  order_number: string
+  title: string | null
+  description: string | null
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled'
+  scheduled_date: string | null
+  completed_date: string | null
+  created_at: string
+  updated_at: string
+  customer?: Customer
+}
+
 export interface Inspection {
   id: string
   organization_id: string
   template_id: string
   template_version: number
   inspector_id: string
+  customer_id: string | null
+  service_order_id: string | null
   title: string
   location: string | null
   notes: string | null
