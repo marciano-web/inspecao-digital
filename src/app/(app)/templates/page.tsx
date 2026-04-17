@@ -16,13 +16,23 @@ export default function TemplatesPage() {
   const supabase = createClient()
 
   const fetchTemplates = async () => {
-    const { data } = await supabase
-      .from('inspection_templates')
-      .select('*, creator:profiles(full_name)')
-      .order('updated_at', { ascending: false })
+    try {
+      const { data, error } = await supabase
+        .from('inspection_templates')
+        .select('*, creator:profiles(full_name)')
+        .order('updated_at', { ascending: false })
 
-    if (data) setTemplates(data as unknown as InspectionTemplate[])
-    setLoading(false)
+      if (error) {
+        console.error('Erro ao buscar templates:', error)
+        toast.error('Erro: ' + error.message)
+      }
+      if (data) setTemplates(data as unknown as InspectionTemplate[])
+    } catch (e) {
+      console.error('Falha na requisição:', e)
+      toast.error('Falha ao carregar templates')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { fetchTemplates() }, [])

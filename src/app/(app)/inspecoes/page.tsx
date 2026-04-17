@@ -24,19 +24,25 @@ export default function InspecoesPage() {
 
   useEffect(() => {
     const fetch = async () => {
-      let query = supabase
-        .from('inspections')
-        .select('*, template:inspection_templates(title), inspector:profiles(full_name)')
-        .order('created_at', { ascending: false })
-        .limit(50)
+      try {
+        let query = supabase
+          .from('inspections')
+          .select('*, template:inspection_templates(title), inspector:profiles(full_name)')
+          .order('created_at', { ascending: false })
+          .limit(50)
 
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter)
+        }
+
+        const { data, error } = await query
+        if (error) console.error('Erro ao buscar inspeções:', error)
+        if (data) setInspections(data as unknown as Inspection[])
+      } catch (e) {
+        console.error('Falha na requisição:', e)
+      } finally {
+        setLoading(false)
       }
-
-      const { data } = await query
-      if (data) setInspections(data as unknown as Inspection[])
-      setLoading(false)
     }
     fetch()
   }, [statusFilter, supabase])
