@@ -13,6 +13,10 @@ export const fieldTypeLabels: Record<FieldType, string> = {
   signature: 'Assinatura',
   slider: 'Escala (slider)',
   checkbox_list: 'Lista de verificação',
+  temperature: 'Temperatura',
+  barcode: 'QR Code / Código',
+  person: 'Pessoa / Inspetor',
+  calculation: 'Cálculo (fórmula)',
 }
 
 export function getDefaultConfig(fieldType: FieldType): FieldConfig {
@@ -54,6 +58,14 @@ export function getDefaultConfig(fieldType: FieldType): FieldConfig {
       }
     case 'signature':
       return {}
+    case 'temperature':
+      return { unit: '°C', step: 0.1, tolerance_min: undefined, tolerance_max: undefined }
+    case 'barcode':
+      return { scan_format: 'any' }
+    case 'person':
+      return { filter_role: 'all' }
+    case 'calculation':
+      return { formula_operation: 'sum', formula_fields: [], decimal_places: 2, unit: '' }
     default:
       return {}
   }

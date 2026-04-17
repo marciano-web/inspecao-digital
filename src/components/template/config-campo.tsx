@@ -373,6 +373,78 @@ function FieldTypeConfig({ fieldType, config, update }: { fieldType: FieldType; 
           <label className="flex items-center gap-1.5"><span className="text-slate-500">Passo:</span><input type="number" value={(config.step as number) ?? 1} onChange={(e) => update('step', Number(e.target.value))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm" /></label>
         </div>
       )
+    case 'temperature':
+      return (
+        <div className="space-y-2 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5"><span className="text-slate-500">Unidade:</span>
+              <select value={(config.unit as string) ?? '°C'} onChange={(e) => update('unit', e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+                <option value="°C">°C</option>
+                <option value="°F">°F</option>
+                <option value="K">K</option>
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5"><span className="text-slate-500">Passo:</span><input type="number" step="0.1" value={(config.step as number) ?? 0.1} onChange={(e) => update('step', Number(e.target.value))} className="w-20 rounded border border-slate-300 px-2 py-1 text-center text-sm" /></label>
+          </div>
+          <p className="text-xs font-medium text-slate-500">Faixa aceitável (opcional - aprovado se dentro do intervalo):</p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5"><span className="text-slate-500">Min:</span><input type="number" step="0.1" value={(config.tolerance_min as number) ?? ''} onChange={(e) => update('tolerance_min', e.target.value ? Number(e.target.value) : undefined)} className="w-20 rounded border border-slate-300 px-2 py-1 text-center text-sm" placeholder="—" /></label>
+            <label className="flex items-center gap-1.5"><span className="text-slate-500">Max:</span><input type="number" step="0.1" value={(config.tolerance_max as number) ?? ''} onChange={(e) => update('tolerance_max', e.target.value ? Number(e.target.value) : undefined)} className="w-20 rounded border border-slate-300 px-2 py-1 text-center text-sm" placeholder="—" /></label>
+          </div>
+        </div>
+      )
+    case 'barcode':
+      return (
+        <div className="text-sm">
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">Formato:</span>
+            <select value={(config.scan_format as string) ?? 'any'} onChange={(e) => update('scan_format', e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+              <option value="any">Qualquer</option>
+              <option value="qr_code">QR Code</option>
+              <option value="code_128">Code 128</option>
+              <option value="ean_13">EAN-13</option>
+            </select>
+          </label>
+          <p className="mt-1 text-xs text-slate-400">O usuário pode escanear ou digitar manualmente</p>
+        </div>
+      )
+    case 'person':
+      return (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-slate-500">Filtrar por papel:</span>
+          <select value={(config.filter_role as string) ?? 'all'} onChange={(e) => update('filter_role', e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+            <option value="all">Todos</option>
+            <option value="admin">Apenas administradores</option>
+            <option value="manager">Apenas gerentes</option>
+            <option value="inspector">Apenas inspetores</option>
+          </select>
+        </label>
+      )
+    case 'calculation':
+      return (
+        <div className="space-y-2 text-sm">
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">Operação:</span>
+            <select value={(config.formula_operation as string) ?? 'sum'} onChange={(e) => update('formula_operation', e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+              <option value="sum">Soma (+)</option>
+              <option value="average">Média</option>
+              <option value="min">Mínimo</option>
+              <option value="max">Máximo</option>
+              <option value="multiply">Multiplicação (×)</option>
+              <option value="subtract">Subtração (−)</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">Casas decimais:</span>
+            <input type="number" min="0" max="6" value={(config.decimal_places as number) ?? 2} onChange={(e) => update('decimal_places', Number(e.target.value))} className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm" />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">Unidade:</span>
+            <input type="text" value={(config.unit as string) ?? ''} onChange={(e) => update('unit', e.target.value)} placeholder="Ex: kg, R$" className="w-24 rounded border border-slate-300 px-2 py-1 text-sm" />
+          </label>
+          <p className="text-xs text-amber-600">⚠ Os campos de origem (números) devem estar antes deste no formulário</p>
+        </div>
+      )
     default:
       return null
   }

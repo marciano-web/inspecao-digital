@@ -1,7 +1,7 @@
 export type UserRole = 'admin' | 'manager' | 'inspector'
 export type TemplateStatus = 'draft' | 'published' | 'archived'
 export type ScoringMethod = 'none' | 'pass_fail' | 'percentage' | 'numeric_0_10' | 'custom_scale'
-export type FieldType = 'text' | 'textarea' | 'yes_no_na' | 'multiple_choice' | 'single_select' | 'number' | 'date' | 'datetime' | 'photo' | 'signature' | 'slider' | 'checkbox_list'
+export type FieldType = 'text' | 'textarea' | 'yes_no_na' | 'multiple_choice' | 'single_select' | 'number' | 'date' | 'datetime' | 'photo' | 'signature' | 'slider' | 'checkbox_list' | 'temperature' | 'barcode' | 'person' | 'calculation'
 export type InspectionStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled'
 export type ActionPriority = 'low' | 'medium' | 'high' | 'critical'
 export type ActionStatus = 'open' | 'in_progress' | 'completed' | 'overdue'
@@ -82,6 +82,18 @@ export interface FieldConfig {
   min_photos?: number
   max_photos?: number
   require_annotation?: boolean
+  // Temperature
+  tolerance_min?: number
+  tolerance_max?: number
+  // Barcode
+  scan_format?: 'qr_code' | 'code_128' | 'ean_13' | 'any'
+  // Person
+  filter_role?: 'admin' | 'manager' | 'inspector' | 'all'
+  // Calculation
+  formula?: string
+  formula_fields?: string[]
+  formula_operation?: 'sum' | 'average' | 'min' | 'max' | 'multiply' | 'subtract'
+  decimal_places?: number
 }
 
 export interface FieldCondition {

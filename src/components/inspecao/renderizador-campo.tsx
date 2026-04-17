@@ -1,8 +1,8 @@
 'use client'
 
-import type { TemplateField, FieldConfig } from '@/lib/types/database'
-import { Camera, Plus, X, ImageIcon } from 'lucide-react'
-import { useState, useRef } from 'react'
+import type { TemplateField, FieldConfig, Profile } from '@/lib/types/database'
+import { Camera, X, QrCode, User, Calculator, Thermometer, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 interface RenderizadorCampoProps {
   field: TemplateField
@@ -11,9 +11,14 @@ interface RenderizadorCampoProps {
   photos?: Array<{ url: string; id: string }>
   onAddPhoto?: (file: File) => void
   onRemovePhoto?: (id: string) => void
+  // For person field: list of org members
+  orgMembers?: Profile[]
+  // For calculation field: all responses to compute formula
+  allResponses?: Record<string, unknown>
+  allFields?: TemplateField[]
 }
 
-export function RenderizadorCampo({ field, value, onChange, photos, onAddPhoto, onRemovePhoto }: RenderizadorCampoProps) {
+export function RenderizadorCampo({ field, value, onChange, photos, onAddPhoto, onRemovePhoto, orgMembers, allResponses, allFields }: RenderizadorCampoProps) {
   const config = field.config as FieldConfig
 
   switch (field.field_type) {
@@ -249,6 +254,117 @@ export function RenderizadorCampo({ field, value, onChange, photos, onAddPhoto, 
       )
     }
 
+    case 'temperature': {
+      const numVal = (value as number) ?? null
+      const tMin = config.tolerance_min
+      const tMax = config.tolerance_max
+      const hasTolerance = tMin !== undefined || tMax !== undefined
+      let status: 'ok' | 'fail' | 'none' = 'none'
+      if (hasTolerance && numVal !== null) {
+        const aboveMin = tMin === undefined || numVal >= tMin
+        const belowMax = tMax === undefined || numVal <= tMax
+        status = aboveMin && belowMax ? 'ok' : 'fail'
+      }
+      return (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <Thermometer className="h-5 w-5 text-slate-400" />
+            <input
+              type="number"
+              step={config.step ?? 0.1}
+              value={numVal ?? ''}
+              onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+              className={`w-full rounded-lg border px-4 py-3 text-base focus:outline-none focus:ring-2 ${
+                status === 'fail' ? 'border-red-500 focus:ring-red-500/20' :
+                status === 'ok' ? 'border-green-500 focus:ring-green-500/20' :
+                'border-slate-300 focus:border-blue-500 focus:ring-blue-500/20'
+              }`}
+            />
+            <span className="shrink-0 text-base font-medium text-slate-600">{config.unit ?? '°C'}</span>
+          </div>
+          {hasTolerance && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500">
+                Faixa: {tMin ?? '−∞'} a {tMax ?? '+∞'} {config.unit}
+              </span>
+              {status === 'ok' && <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle2 className="h-3.5 w-3.5" /> Dentro da faixa</span>}
+              {status === 'fail' && <span className="flex items-center gap-1 text-red-600 font-medium"><AlertTriangle className="h-3.5 w-3.5" /> Fora da faixa</span>}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    case 'barcode':
+      return <BarcodeScanner value={value as string} onChange={onChange} format={config.scan_format ?? 'any'} />
+
+    case 'person': {
+      const filter = config.filter_role ?? 'all'
+      const members = (orgMembers ?? []).filter(m =>
+        m.is_active && (filter === 'all' || m.role === filter)
+      )
+      return (
+        <div className="relative">
+          <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <select
+            value={(value as string) ?? ''}
+            onChange={(e) => onChange(e.target.value || null)}
+            className="w-full appearance-none rounded-lg border border-slate-300 py-3 pl-11 pr-4 text-base focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="">Selecione uma pessoa...</option>
+            {members.map(m => (
+              <option key={m.id} value={m.id}>{m.full_name} ({m.role})</option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    case 'calculation': {
+      const op = config.formula_operation ?? 'sum'
+      const decimals = config.decimal_places ?? 2
+      // Find numeric/temperature siblings to compute
+      const numericFields = (allFields ?? []).filter(f =>
+        (f.field_type === 'number' || f.field_type === 'temperature' || f.field_type === 'slider') && f.id !== field.id
+      )
+      const values = numericFields
+        .map(f => allResponses?.[f.id])
+        .filter((v): v is number => typeof v === 'number')
+
+      let result: number | null = null
+      if (values.length > 0) {
+        if (op === 'sum') result = values.reduce((a, b) => a + b, 0)
+        else if (op === 'average') result = values.reduce((a, b) => a + b, 0) / values.length
+        else if (op === 'min') result = Math.min(...values)
+        else if (op === 'max') result = Math.max(...values)
+        else if (op === 'multiply') result = values.reduce((a, b) => a * b, 1)
+        else if (op === 'subtract') result = values.slice(1).reduce((a, b) => a - b, values[0])
+      }
+
+      // Auto-update value when computed
+      const computedStr = result !== null ? result.toFixed(decimals) : ''
+      const currentStr = value !== null && value !== undefined ? String(value) : ''
+      if (computedStr !== currentStr) {
+        setTimeout(() => onChange(result), 0)
+      }
+
+      return (
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <Calculator className="h-5 w-5 text-slate-400" />
+          <span className="flex-1 text-base font-bold text-slate-700">
+            {result !== null ? result.toFixed(decimals) : '—'}
+          </span>
+          {config.unit && <span className="text-sm text-slate-500">{config.unit}</span>}
+          <span className="ml-2 text-xs text-slate-400">
+            ({op === 'sum' ? 'soma' : op === 'average' ? 'média' : op === 'min' ? 'mínimo' : op === 'max' ? 'máximo' : op === 'multiply' ? 'multiplicação' : 'subtração'} de {values.length} campo{values.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+      )
+    }
+
+    case 'signature':
+      return <SignaturePad value={value as string} onChange={onChange} />
+
     default:
       return (
         <p className="text-sm text-slate-400">
@@ -256,4 +372,187 @@ export function RenderizadorCampo({ field, value, onChange, photos, onAddPhoto, 
         </p>
       )
   }
+}
+
+function BarcodeScanner({ value, onChange, format }: { value?: string; onChange: (v: string) => void; format: string }) {
+  const [scanning, setScanning] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+    }
+    setScanning(false)
+  }
+
+  useEffect(() => {
+    if (!scanning) return
+    let detector: { detect: (s: HTMLVideoElement) => Promise<Array<{ rawValue: string }>> } | null = null
+    let interval: ReturnType<typeof setInterval> | null = null
+    let cancelled = false
+
+    const start = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+        // @ts-expect-error - BarcodeDetector is a browser API not in TS lib
+        if (typeof window.BarcodeDetector !== 'undefined') {
+          // @ts-expect-error
+          detector = new window.BarcodeDetector({ formats: format === 'any' ? ['qr_code', 'code_128', 'ean_13'] : [format] })
+          interval = setInterval(async () => {
+            if (cancelled || !videoRef.current || !detector) return
+            try {
+              const codes = await detector.detect(videoRef.current)
+              if (codes.length > 0) {
+                onChange(codes[0].rawValue)
+                stopCamera()
+              }
+            } catch { /* ignore */ }
+          }, 400)
+        }
+      } catch {
+        setScanning(false)
+      }
+    }
+    start()
+    return () => {
+      cancelled = true
+      if (interval) clearInterval(interval)
+      stopCamera()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanning])
+
+  if (scanning) {
+    return (
+      <div className="space-y-2">
+        <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
+          <video ref={videoRef} playsInline muted className="h-full w-full object-cover" />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="h-32 w-48 border-2 border-blue-400 rounded-lg" />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={stopCamera}
+          className="w-full rounded-lg border border-slate-300 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+        >
+          Cancelar
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Digite ou escaneie o código"
+          className="flex-1 rounded-lg border border-slate-300 px-4 py-3 text-base focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        />
+        <button
+          type="button"
+          onClick={() => setScanning(true)}
+          className="flex items-center gap-1 rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-800"
+        >
+          <QrCode className="h-5 w-5" />
+          Escanear
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SignaturePad({ value, onChange }: { value?: string; onChange: (v: string) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const drawing = useRef(false)
+  const lastPos = useRef<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !value) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const img = new Image()
+    img.onload = () => ctx.drawImage(img, 0, 0)
+    img.src = value
+  }, [value])
+
+  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current!
+    const rect = canvas.getBoundingClientRect()
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height,
+    }
+  }
+
+  const start = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault()
+    drawing.current = true
+    lastPos.current = getPos(e)
+  }
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!drawing.current) return
+    e.preventDefault()
+    const ctx = canvasRef.current!.getContext('2d')!
+    const pos = getPos(e)
+    ctx.beginPath()
+    ctx.moveTo(lastPos.current!.x, lastPos.current!.y)
+    ctx.lineTo(pos.x, pos.y)
+    ctx.strokeStyle = '#0f172a'
+    ctx.lineWidth = 2
+    ctx.lineCap = 'round'
+    ctx.stroke()
+    lastPos.current = pos
+  }
+
+  const stop = () => {
+    if (!drawing.current) return
+    drawing.current = false
+    onChange(canvasRef.current!.toDataURL('image/png'))
+  }
+
+  const clear = () => {
+    const ctx = canvasRef.current!.getContext('2d')!
+    ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height)
+    onChange('')
+  }
+
+  return (
+    <div className="space-y-2">
+      <canvas
+        ref={canvasRef}
+        width={600}
+        height={200}
+        className="w-full rounded-lg border-2 border-dashed border-slate-300 bg-white touch-none"
+        onMouseDown={start}
+        onMouseMove={draw}
+        onMouseUp={stop}
+        onMouseLeave={stop}
+        onTouchStart={start}
+        onTouchMove={draw}
+        onTouchEnd={stop}
+      />
+      <button
+        type="button"
+        onClick={clear}
+        className="text-xs text-slate-500 hover:text-slate-700"
+      >
+        Limpar assinatura
+      </button>
+    </div>
+  )
 }

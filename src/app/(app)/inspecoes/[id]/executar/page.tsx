@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
 import { RenderizadorCampo } from '@/components/inspecao/renderizador-campo'
 import { ChevronLeft, ChevronRight, Save, Send, MapPin } from 'lucide-react'
-import type { InspectionTemplate, TemplateSection, TemplateField, Inspection } from '@/lib/types/database'
+import type { InspectionTemplate, TemplateSection, TemplateField, Inspection, Profile } from '@/lib/types/database'
 import toast from 'react-hot-toast'
 import { v4 as uuid } from 'uuid'
 
@@ -28,6 +28,7 @@ export default function ExecutarInspecaoPage() {
   const [sections, setSections] = useState<(TemplateSection & { fields: TemplateField[] })[]>([])
   const [responses, setResponses] = useState<Record<string, unknown>>({})
   const [photos, setPhotos] = useState<PhotoItem[]>([])
+  const [orgMembers, setOrgMembers] = useState<Profile[]>([])
   const [currentSection, setCurrentSection] = useState(0)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -97,6 +98,13 @@ export default function ExecutarInspecaoPage() {
         }))
         setPhotos(photoItems)
       }
+
+      // Load org members for person-type fields
+      const { data: members } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('full_name')
+      if (members) setOrgMembers(members)
 
       setLoading(false)
     }
@@ -307,6 +315,9 @@ export default function ExecutarInspecaoPage() {
                   photos={photos.filter(p => p.fieldId === field.id)}
                   onAddPhoto={(file) => handleAddPhoto(field.id, file)}
                   onRemovePhoto={handleRemovePhoto}
+                  orgMembers={orgMembers}
+                  allResponses={responses}
+                  allFields={section.fields}
                 />
 
                 {/* Conditional actions triggered by response */}
