@@ -8,12 +8,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# NEXT_PUBLIC_ vars are inlined at build time by Next.js
-# Railway provides these as build args from service variables
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+# NEXT_PUBLIC_ vars are inlined at build time by Next.js (public/safe to expose)
+ENV NEXT_PUBLIC_SUPABASE_URL=https://axcwytlvmmodqaukhpqx.supabase.co
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4Y3d5dGx2bW1vZHFhdWtocHF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzOTEwOTEsImV4cCI6MjA5MTk2NzA5MX0.a1aWq-FC-s0VvAsRFIEOWZ_nzIJzNM8MR3EZf4AFxro
 RUN npm run build
 
 FROM node:20-alpine AS runner
