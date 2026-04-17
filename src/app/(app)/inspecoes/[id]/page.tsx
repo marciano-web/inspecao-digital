@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { createClient } from '@/lib/supabase/client'
-import { ArrowLeft, MapPin, Calendar, User, CheckCircle2, XCircle, MinusCircle, Download, Building2, FileCheck } from 'lucide-react'
+import { ArrowLeft, MapPin, Calendar, User, CheckCircle2, XCircle, MinusCircle, Download, Building2, FileCheck, Pencil, Trash2 } from 'lucide-react'
 import type { Inspection, TemplateSection, TemplateField, Organization, Customer, ServiceOrder, Profile, InspectionTemplate, InspectionPhoto } from '@/lib/types/database'
 import toast from 'react-hot-toast'
 import { generateInspectionPdf } from '@/lib/utils/pdf-generator'
@@ -27,6 +27,7 @@ export default function VisualizarInspecaoPage() {
   const [inspector, setInspector] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -78,6 +79,42 @@ export default function VisualizarInspecaoPage() {
     load()
   }, [id, router, supabase])
 
+  const handleEdit = async () => {
+    if (!inspection) return
+    // Reopen for editing: change status back to in_progress
+    const { error } = await supabase
+      .from('inspections')
+      .update({ status: 'in_progress', completed_at: null })
+      .eq('id', inspection.id)
+    if (error) {
+      toast.error('Erro ao reabrir: ' + error.message)
+      return
+    }
+    toast.success('Inspeção reaberta para edição')
+    router.push(`/inspecoes/${inspection.id}/executar`)
+  }
+
+  const handleDelete = async () => {
+    if (!inspection) return
+    if (!confirm(`Excluir esta inspeção?\n\n"${inspection.title}"\n\nEsta ação não pode ser desfeita. Fotos, vídeos e respostas serão removidos.`)) return
+    setDeleting(true)
+    try {
+      // Delete photos from storage
+      if (photos.length > 0) {
+        const paths = photos.map(p => p.storage_path)
+        await supabase.storage.from('inspection-photos').remove(paths)
+      }
+      // Delete inspection (cascade removes responses and photo records)
+      const { error } = await supabase.from('inspections').delete().eq('id', inspection.id)
+      if (error) throw error
+      toast.success('Inspeção excluída')
+      router.push('/inspecoes')
+    } catch (e) {
+      toast.error('Erro ao excluir: ' + (e instanceof Error ? e.message : ''))
+      setDeleting(false)
+    }
+  }
+
   const handleDownloadPdf = async () => {
     if (!inspection || !template || !profile) return
     setDownloadingPdf(true)
@@ -91,6 +128,9 @@ export default function VisualizarInspecaoPage() {
         try { notes = JSON.parse(inspection.notes) } catch { /* not JSON, ignore */ }
       }
 
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
+      const publicBucketUrl = `${supabaseUrl}/storage/v1/object/public/inspection-photos`
+
       const pdfBlob = await generateInspectionPdf({
         org: org as Organization,
         inspection,
@@ -102,6 +142,7 @@ export default function VisualizarInspecaoPage() {
         customer,
         serviceOrder,
         photos,
+        publicBucketUrl,
       })
 
       // Download
@@ -146,23 +187,38 @@ export default function VisualizarInspecaoPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button onClick={() => router.back()} className="flex items-center gap-1 text-sm text-blue-600 hover:underline">
           <ArrowLeft className="h-4 w-4" /> Voltar
         </button>
         {inspection.status === 'completed' && (
-          <button
-            onClick={handleDownloadPdf}
-            disabled={downloadingPdf}
-            className="flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
-          >
-            {downloadingPdf ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {downloadingPdf ? 'Gerando...' : 'Baixar PDF'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleEdit}
+              className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <Pencil className="h-4 w-4" /> Editar
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex items-center gap-1 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+            >
+              <Trash2 className="h-4 w-4" /> Excluir
+            </button>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+            >
+              {downloadingPdf ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              {downloadingPdf ? 'Gerando...' : 'Baixar PDF'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -198,7 +254,9 @@ export default function VisualizarInspecaoPage() {
           <div className="divide-y divide-slate-100">
             {section.fields.map((field) => {
               const val = responses[field.id]
-              const fieldPhotos = photos.filter(p => p.field_id === field.id)
+              const fieldMedia = photos.filter(p => p.field_id === field.id)
+              const fieldPhotos = fieldMedia.filter(p => !p.mime_type?.startsWith('video/'))
+              const fieldVideos = fieldMedia.filter(p => p.mime_type?.startsWith('video/'))
               return (
                 <div key={field.id} className="px-4 py-3">
                   <div className="flex items-start gap-3">
@@ -211,8 +269,20 @@ export default function VisualizarInspecaoPage() {
                           {fieldPhotos.map(p => {
                             const url = supabase.storage.from('inspection-photos').getPublicUrl(p.storage_path).data.publicUrl
                             return (
-                              <a key={p.id} href={url} target="_blank" rel="noopener noreferrer" className="block h-16 w-16 overflow-hidden rounded-lg border border-slate-200">
+                              <a key={p.id} href={url} target="_blank" rel="noopener noreferrer" className="block h-20 w-20 overflow-hidden rounded-lg border border-slate-200">
                                 <img src={url} alt="" className="h-full w-full object-cover" />
+                              </a>
+                            )
+                          })}
+                        </div>
+                      )}
+                      {fieldVideos.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {fieldVideos.map(v => {
+                            const url = supabase.storage.from('inspection-photos').getPublicUrl(v.storage_path).data.publicUrl
+                            return (
+                              <a key={v.id} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-blue-600 hover:bg-slate-100">
+                                ▶ {v.file_name}
                               </a>
                             )
                           })}
