@@ -16,31 +16,55 @@ interface GeneratePdfParams {
 }
 
 async function loadImageAsBase64(url: string): Promise<{ data: string; w: number; h: number; format: string } | null> {
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10000)
-    const response = await fetch(url, { signal: controller.signal })
-    clearTimeout(timeout)
-    if (!response.ok) return null
-    const blob = await response.blob()
-    return await new Promise((resolve) => {
+  return await new Promise(async (resolve) => {
+    // Hard timeout: never hang more than 8 seconds total
+    const hardTimeout = setTimeout(() => {
+      console.warn('[PDF] Image load timeout:', url)
+      resolve(null)
+    }, 8000)
+
+    try {
+      const response = await fetch(url, { mode: 'cors' })
+      if (!response.ok) {
+        clearTimeout(hardTimeout)
+        console.warn('[PDF] Image fetch failed:', response.status, url)
+        return resolve(null)
+      }
+      const blob = await response.blob()
+
+      // Skip unsupported formats
+      if (blob.type.includes('heic') || blob.type.includes('heif')) {
+        clearTimeout(hardTimeout)
+        console.warn('[PDF] HEIC not supported, skipping:', url)
+        return resolve(null)
+      }
+
       const reader = new FileReader()
       reader.onloadend = () => {
         const dataUrl = reader.result as string
         const img = new Image()
         img.onload = () => {
+          clearTimeout(hardTimeout)
           const format = blob.type.includes('png') ? 'PNG' : blob.type.includes('webp') ? 'WEBP' : 'JPEG'
           resolve({ data: dataUrl, w: img.width, h: img.height, format })
         }
-        img.onerror = () => resolve(null)
+        img.onerror = () => {
+          clearTimeout(hardTimeout)
+          resolve(null)
+        }
         img.src = dataUrl
       }
-      reader.onerror = () => resolve(null)
+      reader.onerror = () => {
+        clearTimeout(hardTimeout)
+        resolve(null)
+      }
       reader.readAsDataURL(blob)
-    })
-  } catch {
-    return null
-  }
+    } catch (e) {
+      clearTimeout(hardTimeout)
+      console.warn('[PDF] Image load error:', e)
+      resolve(null)
+    }
+  })
 }
 
 function formatValue(field: TemplateField, val: unknown): string {
@@ -71,11 +95,24 @@ export async function generateInspectionPdf(params: GeneratePdfParams): Promise<
   const margin = 15
   const contentWidth = pageWidth - margin * 2
 
-  // Pre-load logo
-  let logoData: { data: string; w: number; h: number; format: string } | null = null
-  if (org.logo_url) {
-    logoData = await loadImageAsBase64(org.logo_url)
-  }
+  console.log('[PDF] Starting generation. Sections:', sections.length, 'Photos:', photos.length)
+
+  // Pre-load ALL images in parallel (logo + all photos)
+  const photoUrlMap = new Map<string, { data: string; w: number; h: number; format: string } | null>()
+  const allPhotoUrls = photos
+    .filter(p => !p.mime_type?.startsWith('video/'))
+    .map(p => ({ id: p.id, url: p.storage_path.startsWith('http') ? p.storage_path : `${publicBucketUrl}/${p.storage_path}` }))
+
+  console.log('[PDF] Pre-loading', allPhotoUrls.length, 'photos in parallel...')
+  const t0 = Date.now()
+
+  const [logoData, ...photoResults] = await Promise.all([
+    org.logo_url ? loadImageAsBase64(org.logo_url) : Promise.resolve(null),
+    ...allPhotoUrls.map(p => loadImageAsBase64(p.url)),
+  ])
+
+  allPhotoUrls.forEach((p, idx) => photoUrlMap.set(p.id, photoResults[idx]))
+  console.log('[PDF] Photos loaded in', Date.now() - t0, 'ms. Generating pages...')
 
   const drawHeader = (subtitle?: string) => {
     let y = margin
@@ -200,13 +237,8 @@ export async function generateInspectionPdf(params: GeneratePdfParams): Promise<
       const photosOnly = fieldPhotos.filter(p => !p.mime_type?.startsWith('video/'))
       const videos = fieldPhotos.filter(p => p.mime_type?.startsWith('video/'))
 
-      // Pre-load images for this field
-      const photoBlocks: Array<Awaited<ReturnType<typeof loadImageAsBase64>>> = []
-      for (const p of photosOnly) {
-        const url = p.storage_path.startsWith('http') ? p.storage_path : `${publicBucketUrl}/${p.storage_path}`
-        const data = await loadImageAsBase64(url)
-        photoBlocks.push(data)
-      }
+      // Use pre-loaded images from parallel cache
+      const photoBlocks = photosOnly.map(p => photoUrlMap.get(p.id) ?? null)
 
       // Render this question across one or more pages (6 photos per page)
       const photosPerPage = 6
@@ -362,5 +394,6 @@ export async function generateInspectionPdf(params: GeneratePdfParams): Promise<
     }
   }
 
+  console.log('[PDF] Generation complete. Pages:', doc.getNumberOfPages())
   return doc.output('blob')
 }
