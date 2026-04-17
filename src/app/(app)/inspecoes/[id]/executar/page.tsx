@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/auth-context'
 import { RenderizadorCampo } from '@/components/inspecao/renderizador-campo'
+import { MediaCapture } from '@/components/common/media-capture'
 import { ChevronLeft, ChevronRight, Save, Send, MapPin } from 'lucide-react'
 import type { InspectionTemplate, TemplateSection, TemplateField, Inspection, Profile } from '@/lib/types/database'
 import toast from 'react-hot-toast'
@@ -115,21 +116,32 @@ export default function ExecutarInspecaoPage() {
   const saveResponses = useCallback(async (data: Record<string, unknown>) => {
     if (!inspection || !sections.length) return
 
-    const upserts = Object.entries(data).map(([fieldId, value]) => {
+    // Build a set of valid field IDs from sections to filter out junk keys (e.g. "_note" suffix from conditional inputs)
+    const validFieldIds = new Set<string>()
+    sections.forEach(s => s.fields.forEach(f => validFieldIds.add(f.id)))
+
+    const upserts: Array<{ inspection_id: string; field_id: string; section_id: string; value: unknown; repeat_index: number }> = []
+    for (const [fieldId, value] of Object.entries(data)) {
+      if (!validFieldIds.has(fieldId)) continue // skip non-field keys
       const section = sections.find(s => s.fields.some(f => f.id === fieldId))
-      return {
+      if (!section) continue
+      upserts.push({
         inspection_id: inspection.id,
         field_id: fieldId,
-        section_id: section?.id ?? sections[0].id,
+        section_id: section.id,
         value: value ?? null,
         repeat_index: 0,
-      }
-    })
+      })
+    }
 
     if (upserts.length > 0) {
-      await supabase
+      const { error } = await supabase
         .from('inspection_responses')
         .upsert(upserts, { onConflict: 'inspection_id,field_id,repeat_index' })
+      if (error) {
+        console.error('Erro ao salvar respostas:', error)
+        throw error
+      }
     }
   }, [inspection, sections, supabase])
 
@@ -184,35 +196,62 @@ export default function ExecutarInspecaoPage() {
   }
 
   const handleSaveDraft = async () => {
-    await saveResponses(responses)
-    if (location) {
-      await supabase.from('inspections').update({ location }).eq('id', id)
+    try {
+      await saveResponses(responses)
+      if (location) {
+        await supabase.from('inspections').update({ location }).eq('id', id)
+      }
+      toast.success('Rascunho salvo')
+      router.push('/inspecoes')
+    } catch (e) {
+      console.error('Erro ao salvar rascunho:', e)
+      toast.error('Erro ao salvar: ' + (e instanceof Error ? e.message : 'desconhecido'))
     }
-    toast.success('Rascunho salvo')
-    router.push('/inspecoes')
   }
 
   const handleSubmit = async () => {
     setSubmitting(true)
+    try {
+      // Save all responses first
+      await saveResponses(responses)
 
-    // Save all responses first
-    await saveResponses(responses)
-
-    // Update inspection
-    await supabase
-      .from('inspections')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-        location: location || null,
+      // Collect conditional notes (keys ending with "_note") into inspection.notes
+      const noteEntries: Record<string, string> = {}
+      Object.entries(responses).forEach(([k, v]) => {
+        if (k.endsWith('_note') && typeof v === 'string' && v.trim()) {
+          noteEntries[k.replace(/_note$/, '')] = v
+        }
       })
-      .eq('id', id)
+      const notesJson = Object.keys(noteEntries).length > 0 ? JSON.stringify(noteEntries) : null
 
-    // Calculate score
-    await supabase.rpc('calculate_inspection_score', { p_inspection_id: id })
+      // Update inspection
+      const { error: updateError } = await supabase
+        .from('inspections')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          location: location || null,
+          notes: notesJson,
+        })
+        .eq('id', id)
 
-    toast.success('Inspeção concluída!')
-    router.push('/inspecoes')
+      if (updateError) throw updateError
+
+      // Calculate score (don't fail if this errors - it's optional)
+      try {
+        await supabase.rpc('calculate_inspection_score', { p_inspection_id: id })
+      } catch (scoreErr) {
+        console.warn('Erro ao calcular score:', scoreErr)
+      }
+
+      toast.success('Inspeção concluída!')
+      router.push('/inspecoes')
+    } catch (e) {
+      console.error('Erro ao concluir inspeção:', e)
+      toast.error('Erro ao enviar: ' + (e instanceof Error ? e.message : 'desconhecido'))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (loading || !template) {
@@ -320,10 +359,18 @@ export default function ExecutarInspecaoPage() {
                   allFields={section.fields}
                 />
 
-                {/* Conditional actions triggered by response */}
-                {needsPhoto && photos.filter(p => p.fieldId === field.id).length === 0 && (
-                  <div className="mt-2 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    <span>Foto/evidência obrigatória para esta resposta</span>
+                {/* Conditional actions: upload of photo/video required */}
+                {needsPhoto && field.field_type !== 'photo' && (
+                  <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                    <p className="mb-2 text-xs font-medium text-amber-700">Foto/evidência obrigatória para esta resposta:</p>
+                    <MediaCapture
+                      photos={photos.filter(p => p.fieldId === field.id)}
+                      onAdd={(file) => handleAddPhoto(field.id, file)}
+                      onRemove={handleRemovePhoto}
+                      maxItems={5}
+                      acceptVideo={true}
+                      required={true}
+                    />
                   </div>
                 )}
                 {needsNote && (

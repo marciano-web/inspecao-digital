@@ -299,12 +299,17 @@ export function EditorTemplate({ onSave, saving, initialData }: EditorTemplatePr
           {!section.collapsed && (
             <div className="p-4 space-y-4">
               {/* Section description */}
-              <input
-                type="text"
+              <textarea
                 value={section.description}
                 onChange={(e) => updateSection(section._id, { description: e.target.value })}
                 placeholder="Descrição da seção (opcional)"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                rows={2}
+                onInput={(e) => {
+                  const t = e.currentTarget
+                  t.style.height = 'auto'
+                  t.style.height = t.scrollHeight + 'px'
+                }}
+                className="w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-slate-200 px-3 py-2 text-sm leading-relaxed focus:border-blue-500 focus:outline-none"
               />
 
               {/* Fields */}
@@ -329,14 +334,19 @@ export function EditorTemplate({ onSave, saving, initialData }: EditorTemplatePr
                     </div>
                     <div className="flex-1 space-y-3">
                       <div className="flex gap-2">
-                        <input
-                          type="text"
+                        <textarea
                           value={field.label}
                           onChange={(e) => updateField(section._id, field._id, { label: e.target.value })}
                           placeholder="Pergunta / campo"
-                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                          rows={1}
+                          onInput={(e) => {
+                            const t = e.currentTarget
+                            t.style.height = 'auto'
+                            t.style.height = t.scrollHeight + 'px'
+                          }}
+                          className="flex-1 resize-none overflow-hidden whitespace-pre-wrap break-words rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed focus:border-blue-500 focus:outline-none"
                         />
-                        <span className="shrink-0 rounded-lg bg-blue-50 px-2.5 py-2 text-xs font-medium text-blue-700">
+                        <span className="h-fit shrink-0 rounded-lg bg-blue-50 px-2.5 py-2 text-xs font-medium text-blue-700">
                           {fieldTypeLabels[field.field_type]}
                         </span>
                       </div>
