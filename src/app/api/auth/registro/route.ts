@@ -28,19 +28,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Erro ao criar organização: ' + orgError.message }, { status: 500 })
   }
 
-  // Create auth user with org metadata
-  const { error: userError } = await supabase.auth.admin.createUser({
+  // Create auth user (without app_metadata that triggers profile creation)
+  const { data: userData, error: userError } = await supabase.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
     user_metadata: { full_name: fullName },
-    app_metadata: { organization_id: org.id, role: 'admin' },
   })
 
-  if (userError) {
-    // Cleanup org on failure
+  if (userError || !userData.user) {
     await supabase.from('organizations').delete().eq('id', org.id)
-    return NextResponse.json({ error: 'Erro ao criar usuário: ' + userError.message }, { status: 500 })
+    return NextResponse.json({ error: 'Erro ao criar usuário: ' + (userError?.message ?? 'unknown') }, { status: 500 })
+  }
+
+  // Create profile directly (instead of relying on trigger)
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .insert({
+      id: userData.user.id,
+      organization_id: org.id,
+      full_name: fullName,
+      role: 'admin',
+    })
+
+  if (profileError) {
+    // Cleanup on failure
+    await supabase.auth.admin.deleteUser(userData.user.id)
+    await supabase.from('organizations').delete().eq('id', org.id)
+    return NextResponse.json({ error: 'Erro ao criar perfil: ' + profileError.message }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })
